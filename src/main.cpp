@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <cmath>
 
 using namespace std;
 class result{
@@ -36,17 +37,17 @@ int main(int argc, char *argv[]){
     int one_kb = 1024;
     // Direct Mapped
     // 1KB
-    temp = direct_mapped(infile_name, one_kb, 32);
-    outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // 4KB
-    temp = direct_mapped(infile_name, 4*one_kb, 32);
-    outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // 16KB
-    temp = direct_mapped(infile_name, 16*one_kb, 32);
-    outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // 32KB
-    temp = direct_mapped(infile_name, 32*one_kb, 32);
-    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
+    // temp = direct_mapped(infile_name, one_kb, 32);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // // 4KB
+    // temp = direct_mapped(infile_name, 4*one_kb, 32);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // // 16KB
+    // temp = direct_mapped(infile_name, 16*one_kb, 32);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // // 32KB
+    // temp = direct_mapped(infile_name, 32*one_kb, 32);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
 
     // Set Associative with LRU
     // Associativity 2
@@ -64,11 +65,26 @@ int main(int argc, char *argv[]){
 
     // Fully Associative with LRU (0)
     temp = fully_associative(infile_name, 16*one_kb, 32, 0);
-    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;;
 
     // Fully Associative with hot-cold (1)
     temp = fully_associative(infile_name, 16*one_kb, 32, 1);
-    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;;
+
+    // Set Associative no allocation
+    // Associativity 2
+    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 2);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // // Associativity 4
+    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 4);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // // Associativity 8
+    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 8);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // // Associativity 16
+    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 16);
+    // outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
+
 
     return 0;
 }
@@ -81,7 +97,7 @@ result direct_mapped(string infile_name, int cache_size, int cache_line_size){
     ifstream infile = ifstream(infile_name);
 
     string line, behavior;
-    unsigned long long address, base, cache_index, cache_line_index;
+    unsigned long long address, block_addr, cache_index, cache_line_index;
     result res;
 
     if (infile.is_open()){
@@ -90,14 +106,14 @@ result direct_mapped(string infile_name, int cache_size, int cache_line_size){
             stringstream s(line);     
             s >> behavior >> hex >>  address;
 
-            base = address / cache_line_size;
-            cache_index = base % cache_entries;
+            block_addr = address / cache_line_size;
+            cache_index = block_addr % cache_entries;
             cache_line_index = address % cache_line_size;
 
-            // base case (cache miss)
+            // block_addr case (cache miss)
             if(cache[cache_index][cache_line_index] != address){
                 for(int i = 0; i < cache_line_size; i++){
-                    cache[cache_index][i] = base*cache_line_size + i;
+                    cache[cache_index][i] = block_addr*cache_line_size + i;
                 }
             } else {
                 res.cache_hits++;
@@ -114,7 +130,7 @@ result set_associative(string infile_name, int cache_size, int cache_line_size, 
     ifstream infile = ifstream(infile_name);
     string line, behavior;
     result res;
-    unsigned long long address, base, cache_index, cache_line_index;
+    unsigned long long address, block_addr, cache_index, cache_line_index;
 
     int cache_entries = cache_size / cache_line_size / associativity;
     cache_info temp;
@@ -131,8 +147,8 @@ result set_associative(string infile_name, int cache_size, int cache_line_size, 
             stringstream s(line);     
             s >> behavior >> hex >> address;
 
-            base = address / cache_line_size;
-            cache_index = base % cache_entries;
+            block_addr = address / cache_line_size;
+            cache_index = block_addr % cache_entries;
             cache_line_index = address % cache_line_size;
             int hit = 0;
             
@@ -160,7 +176,7 @@ result set_associative(string infile_name, int cache_size, int cache_line_size, 
 
                 cache[victim][cache_index].last_used = res.accesses;
                 for (int i = 0; i < cache[victim][cache_index].cache_line.size(); i++){
-                    cache[victim][cache_index].cache_line[i] = base*cache_line_size + i;
+                    cache[victim][cache_index].cache_line[i] = block_addr*cache_line_size + i;
                 }
             }
         }
@@ -173,35 +189,98 @@ result set_associative(string infile_name, int cache_size, int cache_line_size, 
 
 result fully_associative(string infile_name, int cache_size, int cache_line_size, int replacement_policy){
     result res;
-
     // LRU
     if (replacement_policy == 0){
-        res = set_associative(infile_name, cache_size, cache_line_size, cache_size/cache_line_size);
+        // cout << "Fully Associative with LRU" << endl;
+        res =  set_associative(infile_name, cache_size, cache_line_size, cache_size/cache_line_size); 
     }
     // Hot-Cold
     else if (replacement_policy == 1){
         ifstream infile = ifstream(infile_name);
         string line, behavior;
-        result res;
-        unsigned long long address, base, cache_index, cache_line_index;
-
+        unsigned long long address, block_addr, cache_index, cache_line_index;
         int cache_entries = cache_size / cache_line_size;
-        vector<int> hot_cold_bits (cache_entries - 1, 0);
+
         cache_info temp;
-        temp.last_used = 0;
+        temp.last_used = -1;
         temp.cache_line.resize(cache_line_size, -1);
+
+        vector<int> hot_cold_bits (cache_entries - 1, 0);
+        vector<cache_info> cache (cache_entries, temp);
 
         while(getline(infile, line)){
             res.accesses++;
             stringstream s(line);     
             s >> behavior >> hex >> address;
 
-            base = address / cache_line_size;
-            cache_index = base % cache_entries;
+            block_addr = (address / cache_line_size) * cache_line_size;
+            cache_index = block_addr % cache_entries;
             cache_line_index = address % cache_line_size;
-            int hit = 0;
-    }
-    
 
+            int hit = 0;
+            int hits_index = -1;
+
+            for (int i = 0; i < cache.size(); i++){
+                if (cache[i].cache_line[cache_line_index] ==  address){
+                    hit = 1;
+                    hits_index = i;
+                    break;
+                }
+            }
+
+            int hot_cold_index = -1;
+            // cache hit
+            if (hit == 1){
+                res.cache_hits++;
+                hot_cold_index = hits_index + cache_entries - 1;
+                while(hot_cold_index > 0){
+
+                    if(hot_cold_index % 2 == 0){
+                        hot_cold_index = (hot_cold_index - 2) / 2;
+                        hot_cold_bits[hot_cold_index] = 0;
+
+                    } else {
+                        hot_cold_index = (hot_cold_index - 1) / 2;
+                        hot_cold_bits[hot_cold_index] = 1;
+                    }
+                }
+            }
+            
+            // cache miss
+            else {
+                int victim = -1;
+                hot_cold_index = 0;
+                for (int i = 0; i < log2(cache_entries); i++){
+
+                    if (hot_cold_bits[hot_cold_index] == 0){
+                        hot_cold_bits[hot_cold_index] = 1;
+                        hot_cold_index = 2*hot_cold_index + 1;
+
+                    } else {
+                        hot_cold_bits[hot_cold_index] = 0;
+                        hot_cold_index = 2*hot_cold_index + 2;
+                    }
+                }
+                victim = hot_cold_index - (cache_entries - 1);
+                for (int i = 0; i < cache[victim].cache_line.size(); i++){
+                    cache[victim].cache_line[i] = block_addr + i;
+                }
+            }
+        // end of while loop
+        }
+        // cout << res.cache_hits << " " << res.accesses << endl;
+        infile.close();
+    // LRU vs pLRU (hot-cold)
+    } 
     return res;
+}
+
+
+
+result set_assoc_no_alloc(string infile_name, int cache_size, int cache_line_size, int associativity){
+    int cache_entries = cache_size / cache_line_size / associativity;
+    result res;
+    cache_info temp;
+    temp.last_used = -1;
+    temp.cache_line.resize(cache_line_size, -1);
 }
