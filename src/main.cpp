@@ -37,17 +37,17 @@ int main(int argc, char *argv[]){
     int one_kb = 1024;
     // Direct Mapped
     // 1KB
-    // temp = direct_mapped(infile_name, one_kb, 32);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // // 4KB
-    // temp = direct_mapped(infile_name, 4*one_kb, 32);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // // 16KB
-    // temp = direct_mapped(infile_name, 16*one_kb, 32);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // // 32KB
-    // temp = direct_mapped(infile_name, 32*one_kb, 32);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
+    temp = direct_mapped(infile_name, one_kb, 32);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // 4KB
+    temp = direct_mapped(infile_name, 4*one_kb, 32);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // 16KB
+    temp = direct_mapped(infile_name, 16*one_kb, 32);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // 32KB
+    temp = direct_mapped(infile_name, 32*one_kb, 32);
+    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
 
     // Set Associative with LRU
     // Associativity 2
@@ -73,17 +73,45 @@ int main(int argc, char *argv[]){
 
     // Set Associative no allocation
     // Associativity 2
-    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 2);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // // Associativity 4
-    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 4);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // // Associativity 8
-    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 8);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; ";
-    // // Associativity 16
-    // temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 16);
-    // outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
+    temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 2);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 4
+    temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 4);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 8
+    temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 8);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 16
+    temp = set_assoc_no_alloc(infile_name, 16*one_kb, 32, 16);
+    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
+
+    // // Set Associative with prefetching
+    // Associativity 2
+    temp = set_assoc_prefetch(infile_name, 16*one_kb, 32, 2);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 4
+    temp = set_assoc_prefetch(infile_name, 16*one_kb, 32, 4);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 8
+    temp = set_assoc_prefetch(infile_name, 16*one_kb, 32, 8);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 16
+    temp = set_assoc_prefetch(infile_name, 16*one_kb, 32, 16);
+    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
+
+    // // Prefetch on miss
+    // Associativity 2
+    temp = prefetch_on_miss(infile_name, 16*one_kb, 32, 2);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 4 
+    temp = prefetch_on_miss(infile_name, 16*one_kb, 32, 4);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 8
+    temp = prefetch_on_miss(infile_name, 16*one_kb, 32, 8);
+    outfile << temp.cache_hits << " " << temp.accesses << "; ";
+    // Associativity 16
+    temp = prefetch_on_miss(infile_name, 16*one_kb, 32, 16);
+    outfile << temp.cache_hits << " " << temp.accesses << "; " << endl;
 
 
     return 0;
@@ -278,9 +306,227 @@ result fully_associative(string infile_name, int cache_size, int cache_line_size
 
 
 result set_assoc_no_alloc(string infile_name, int cache_size, int cache_line_size, int associativity){
-    int cache_entries = cache_size / cache_line_size / associativity;
+    ifstream infile = ifstream(infile_name);
+    string line, behavior;
     result res;
+    unsigned long long address, block_addr, cache_index, cache_line_index;
+
+    int cache_entries = cache_size / cache_line_size / associativity;
     cache_info temp;
-    temp.last_used = -1;
+    temp.last_used = 0;
     temp.cache_line.resize(cache_line_size, -1);
+
+    // vector<dataType> name(size, value); 
+    vector<vector<cache_info>> cache (associativity, vector<cache_info> (cache_entries, temp));
+
+    if (infile.is_open()){
+        while(getline(infile, line)){
+            res.accesses++;
+            stringstream s(line);     
+            s >> behavior >> hex >> address;
+
+            block_addr = address / cache_line_size;
+            cache_index = block_addr % cache_entries;
+            cache_line_index = address % cache_line_size;
+            int hit = 0;
+            
+            for (int i = 0; i < cache.size(); i++){
+                // cout << cache[i][cache_index].cache_line[cache_line_index] << endl;
+                if (cache[i][cache_index].cache_line[cache_line_index] ==  address){
+                    res.cache_hits++;
+                    // cout << res.cache_hits << endl;
+                    hit = 1;
+                    cache[i][cache_index].last_used = res.accesses;
+                    break;
+                }
+            }
+
+            if (hit == 0 && behavior == "L"){
+                unsigned long long min = 1000000000000;
+                int victim = -1;
+
+                for (int i = 0; i < cache.size(); i++){
+                    if (cache[i][cache_index].last_used < min){
+                        min = cache[i][cache_index].last_used;
+                        victim = i;
+                    }
+                }
+
+                cache[victim][cache_index].last_used = res.accesses;
+                for (int i = 0; i < cache[victim][cache_index].cache_line.size(); i++){
+                    cache[victim][cache_index].cache_line[i] = block_addr*cache_line_size + i;
+                }
+            }
+        }
+        infile.close();
+    }
+    return res;
+}
+
+result set_assoc_prefetch(string infile_name, int cache_size, int cache_line_size, int associativity){
+    ifstream infile = ifstream(infile_name);
+    string line, behavior;
+    result res;
+    unsigned long long address, block_addr, cache_index, cache_line_index;
+
+    int cache_entries = cache_size / cache_line_size / associativity;
+    cache_info temp;
+    temp.last_used = 0;
+    temp.cache_line.resize(cache_line_size, -1);
+
+    // vector<dataType> name(size, value); 
+    vector<vector<cache_info>> cache (associativity, vector<cache_info> (cache_entries, temp));
+
+    if (infile.is_open()){
+        while(getline(infile, line)){
+            res.accesses++;
+            stringstream s(line);     
+            s >> behavior >> hex >> address;
+
+            block_addr = address / cache_line_size;
+            cache_index = block_addr % cache_entries;
+            cache_line_index = address % cache_line_size;
+            int hit = 0;
+            
+            for (int i = 0; i < cache.size(); i++){
+                // cout << cache[i][cache_index].cache_line[cache_line_index] << endl;
+                if (cache[i][cache_index].cache_line[cache_line_index] ==  address){
+                    res.cache_hits++;
+                    // cout << res.cache_hits << endl;
+                    hit = 1;
+                    cache[i][cache_index].last_used = res.accesses;
+                    break;
+                }
+            }
+
+            if (hit == 0){
+                unsigned long long min = 1000000000000;
+                int victim = -1;
+
+                for (int i = 0; i < cache.size(); i++){
+                    if (cache[i][cache_index].last_used < min){
+                        min = cache[i][cache_index].last_used;
+                        victim = i;
+                    }
+                }
+
+                cache[victim][cache_index].last_used = res.accesses;
+                for (int i = 0; i < cache[victim][cache_index].cache_line.size(); i++){
+                    cache[victim][cache_index].cache_line[i] = block_addr*cache_line_size + i;
+                }
+            }
+
+            // next line prefetch
+            cache_index = (block_addr + 1) % cache_entries;
+            block_addr++;
+            int hit_nextline = 0;
+            for (int i = 0; i < cache.size(); i++){
+                if (cache[i][cache_index].cache_line[0] ==  (block_addr*cache_line_size)){
+                    cache[i][cache_index].last_used = res.accesses;
+                    hit_nextline = 1;
+                    break;
+                }
+            }
+            if (hit_nextline == 0 ){
+                int victim = -1;
+                double min = 1000000000000;
+                for (int i = 0; i < cache.size(); i++){
+                    if (cache[i][cache_index].last_used < min){
+                        min = cache[i][cache_index].last_used;
+                        victim = i;
+                    }
+                }
+                // replace element
+                cache[victim][cache_index].last_used = res.accesses;
+                for (int i = 0; i < cache[victim][cache_index].cache_line.size(); i++){
+                    cache[victim][cache_index].cache_line[i] = block_addr*cache_line_size + i;
+                }
+            }
+
+        }
+        infile.close();
+    }
+    return res;
+}
+
+result prefetch_on_miss(string infile_name, int cache_size, int cache_line_size, int associativity){
+    ifstream infile = ifstream(infile_name);
+    string line, behavior;
+    result res;
+    unsigned long long address, block_addr, cache_index, cache_line_index;
+
+    int cache_entries = cache_size / cache_line_size / associativity;
+    cache_info temp;
+    temp.last_used = 0;
+    temp.cache_line.resize(cache_line_size, -1);
+
+    // vector<dataType> name(size, value); 
+    vector<vector<cache_info>> cache (associativity, vector<cache_info> (cache_entries, temp));
+
+    if (infile.is_open()){
+        while(getline(infile, line)){
+            res.accesses++;
+            stringstream s(line);     
+            s >> behavior >> hex >> address;
+
+            block_addr = address / cache_line_size;
+            cache_index = block_addr % cache_entries;
+            cache_line_index = address % cache_line_size;
+            int hit = 0;
+
+            for (int i = 0; i < cache.size(); i++){
+                if (cache[i][cache_index].cache_line[cache_line_index] ==  address){
+                    res.cache_hits++;
+                    hit = 1;
+                    cache[i][cache_index].last_used = res.accesses;
+                    break;
+                }
+            }
+
+            if (hit == 0) {
+                double min = 1000000000000;
+                int victim = -1;
+
+                for (int i = 0; i < cache.size(); i++){
+                    if (cache[i][cache_index].last_used < min){
+                        min = cache[i][cache_index].last_used;
+                        victim = i;
+                    }
+                }
+
+                cache[victim][cache_index].last_used = res.accesses;
+                for (int i = 0; i < cache[victim][cache_index].cache_line.size(); i++){
+                    cache[victim][cache_index].cache_line[i] = block_addr*cache_line_size + i;
+                }
+
+                cache_index = (block_addr + 1) % cache_entries;
+                block_addr++;
+                int hit_nextline = 0;
+
+                for (int i = 0; i < cache.size(); i++){
+                    if (cache[i][cache_index].cache_line[0] ==  (block_addr*cache_line_size)){
+                        cache[i][cache_index].last_used = res.accesses;
+                        hit_nextline = 1;
+                        break;
+                    }
+                }
+                if (hit_nextline == 0 ){
+                    int victim = -1;
+                    double min = 1000000000000;
+                    for (int i = 0; i < cache.size(); i++){
+                        if (cache[i][cache_index].last_used < min){
+                            min = cache[i][cache_index].last_used;
+                            victim = i;
+                        }
+                    }
+                    cache[victim][cache_index].last_used = res.accesses;
+                    for (int i = 0; i < cache[victim][cache_index].cache_line.size(); i++){
+                        cache[victim][cache_index].cache_line[i] = block_addr*cache_line_size + i;
+                    }
+                }
+            }
+        }
+        infile.close();
+    }            
+    return res;
 }
